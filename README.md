@@ -18,7 +18,7 @@ project-makefile is a free software distributed under the LGPL license. This lic
 
 ```
 - the freedom to install and use project-makefile for any usage whatsoever;
-- the freedom to look into project-makefile’s code and adapt it to your own needs by modifying the source code, to which you have direct access since project-makefile is entirely developed in shell script;
+- the freedom to look into project-makefile’s code and adapt it to your own needs by modifying the source code, to which you have direct access since project-makefile is entirely developed in makefile script;
 - the freedom to distribute copies of the software to anyone, provided you do not modify or delete the license;
 - the freedom to enhance project-makefile and to distribute your enhancements among the public so that the entire community may benefit from it, provided you do not modify or delete the license.
 ```
