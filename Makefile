@@ -54,9 +54,31 @@ endif
 export CI_BUILD_REF_CUT=${CI_BUILD_REF:0:8}
 export LOCALIP ?=$(shell ip addr show | awk '$$1 == "inet" && $$3 == "brd" { sub (/\/.*/,""); print $$2 }' | head -n1)
 
+export RELEASE_FILES ?="Resources/doc/index.md"
+
 ########################################################################################################################
 ####                                                      STACK                                                     ####
 ########################################################################################################################
 
 %:
 	@$(MAKE) -B -f config/makefile/Makefile-$$SUFFIX_VS $@
+
+# Publish new release. Usage:
+#   make tag RELEASE_VERSION=(major|minor|patch) RELEASE_FILES="Resources/doc/index.md"
+# You need to install https://github.com/flazz/semver/ before
+tag:
+	@semver inc $(RELEASE_VERSION)
+	@echo "New release: `semver tag`"
+	@echo Releasing sources
+	@(sed -i -r "s/(v[0-9]+\.[0-9]+\.[0-9]+)/`semver tag`/g" $(RELEASE_FILES)) || true
+
+# Tag git with last release
+#   make release GIT_CB=2.x
+release:
+	@git add .
+	@git commit -m "releasing `semver tag`"
+	@(git tag --delete `semver tag`) || true
+	@(git push --delete origin `semver tag`) || true
+	@git tag `semver tag`
+	@git push origin `semver tag`
+	@git push -u origin $(GIT_CB)
