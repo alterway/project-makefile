@@ -30,7 +30,7 @@ export DOCKER_VERSION_CP := $(shell [ ${DOCKER_VERSION} -ge 1705 ] && echo true)
 
 export DOCKER_COMPOSE_VERSION_CP_V2 := $(shell [ ${DOCKER_COMPOSE_VERSION} -ge 170 ] && [ ${DOCKER_COMPOSE_VERSION} -lt 1161 ] && echo true)
 export DOCKER_COMPOSE_VERSION_CP_V3 := $(shell [ ${DOCKER_COMPOSE_VERSION} -ge 1161 ] && echo true)
-DEPLOY_VERSION=
+export DEPLOY_VERSION=
 ifeq (${DOCKER_COMPOSE_VERSION_CP_V2}, true)
 	export DEPLOY_VERSION=v2
 endif
@@ -57,11 +57,13 @@ export LOCALIP ?=$(shell ip addr show | awk '$$1 == "inet" && $$3 == "brd" { sub
 export RELEASE_FILES ?="Resources/doc/index.md"
 
 ########################################################################################################################
+####                                                    OVERLOAD                                                    ####
+########################################################################################################################
+include config/makefile/Makefile-${SUFFIX_VS}
+
+########################################################################################################################
 ####                                                      STACK                                                     ####
 ########################################################################################################################
-
-%:
-	@$(MAKE) -B -f config/makefile/Makefile-$$SUFFIX_VS $@
 
 # Publish new release. Usage:
 #   make tag RELEASE_VERSION=(major|minor|patch) RELEASE_FILES="Resources/doc/index.md"
