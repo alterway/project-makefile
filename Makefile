@@ -42,7 +42,7 @@ else
 		SWARM_MODE = n/a
 	endif
 endif
-export SUFFIX_VS ?=${SWARM_MODE}
+export SUFFIX_VS ?=${DEPLOY_MODE}
 
 export MOD_VERBOSE ?=1
 ifeq (${MOD_VERBOSE},0)
