@@ -1,4 +1,7 @@
-DEFAULT_GOAL := help
+help:
+	#$(MAKEFILE_LIST)
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf ($$1 ~ "--" ? $$2 "\n" : "\033[36m%-10s \033[34m%s\033[0m\n", $$1,  $$2)}'
+.DEFAULT_GOAL := help
 
 ########################################################################################################################
 ####                                            SET ENVIRONMENT VARIABLES                                           ####
@@ -10,6 +13,7 @@ export DOMAIN ?=alterway.devs
 export PROJECT_ROOT ?= $(shell pwd)
 
 export SITE_NAME ?=Project Service Core
+export PROJECT_BUILD ?= local
 export PROJECT_NAME ?=project
 export SERVICE_NAME ?=project
 export PHP_INIT_SERVICES ?=php
@@ -26,20 +30,19 @@ export OPTIONS_COMP ?=--no-dev
 export DOCKER_BINARY := $(shell which docker)
 export DOCKER_VERSION := $(shell docker --version | awk {'print $$3'} | sed 's/[^0-9]//g')
 export DOCKER_COMPOSE_VERSION := $(shell docker-compose -v | awk {'print $$3'} | sed 's/[^0-9]//g')
-export DOCKER_VERSION_CP := $(shell [ ${DOCKER_VERSION} -ge 1705 ] && echo true)
 
-export DOCKER_COMPOSE_VERSION_CP_V2 := $(shell [ ${DOCKER_COMPOSE_VERSION} -ge 170 ] && [ ${DOCKER_COMPOSE_VERSION} -lt 1161 ] && echo true)
-export DOCKER_COMPOSE_VERSION_CP_V3 := $(shell [ ${DOCKER_COMPOSE_VERSION} -ge 1161 ] && echo true)
-export DEPLOY_VERSION=
-ifeq (${DOCKER_COMPOSE_VERSION_CP_V2}, true)
-	export DEPLOY_VERSION=v2
-endif
-ifeq (${DOCKER_COMPOSE_VERSION_CP_V3}, true)
-	ifeq (${DOCKER_VERSION_CP}, true)
-	    export DEPLOY_VERSION=v3
+SWARM_MODE = $(shell docker info -f {{.Swarm.LocalNodeState}} 2>&-)
+ifeq ($(shell [ ${SWARM_MODE} = "active" -a -z ${NO_SWARM} ] && echo "true"), true)
+	export DEPLOY_MODE ?= swarm
+	export NETWORK_DRIVER ?= overlay
+else
+	export DEPLOY_MODE ?= docker-compose
+	export NETWORK_DRIVER ?= bridge
+	ifndef SWARM_MODE
+		SWARM_MODE = n/a
 	endif
 endif
-export SUFFIX_VS ?=${DEPLOY_VERSION}
+export SUFFIX_VS ?=${SWARM_MODE}
 
 export MOD_VERBOSE ?=1
 ifeq (${MOD_VERBOSE},0)
@@ -55,11 +58,12 @@ export CI_BUILD_REF_CUT=${CI_BUILD_REF:0:8}
 export LOCALIP ?=$(shell ip addr show | awk '$$1 == "inet" && $$3 == "brd" { sub (/\/.*/,""); print $$2 }' | head -n1)
 
 export RELEASE_FILES ?="Resources/doc/index.md"
+export RELEASE_REMOTE ?=origin
 
 ########################################################################################################################
 ####                                                    OVERLOAD                                                    ####
 ########################################################################################################################
-include config/makefile/Makefile-${SUFFIX_VS}
+include Makefile-${SUFFIX_VS}
 
 ########################################################################################################################
 ####                                                      STACK                                                     ####
@@ -75,7 +79,7 @@ tag:
 	@(sed -i -r "s/(v[0-9]+\.[0-9]+\.[0-9]+)/`semver tag`/g" $(RELEASE_FILES)) || true
 
 # Tag git with last release
-#   make release GIT_CB=2.x
+#   make release
 release:
 	@git add .
 	@git commit -m "releasing `semver tag`"
@@ -83,4 +87,4 @@ release:
 	@(git push --delete origin `semver tag`) || true
 	@git tag `semver tag`
 	@git push origin `semver tag`
-	@git push -u origin $(GIT_CB)
+	@GIT_CB=$(git symbolic-ref --short HEAD) && git push -u ${RELEASE_REMOTE} $(GIT_CB)
