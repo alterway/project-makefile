@@ -1,7 +1,6 @@
 current_dir := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 help:
-	#$(MAKEFILE_LIST)
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf ($$1 ~ "--" ? $$2 "\n" : "\033[36m%-10s \033[34m%s\033[0m\n", $$1,  $$2)}'
 .DEFAULT_GOAL := help
 
@@ -56,11 +55,13 @@ ifeq (${MOD_DEV},1)
 	export DOCKER_COMPOSE_SUFFIX := -dev
 endif
 
-export CI_BUILD_REF_CUT=${CI_BUILD_REF:0:8}
 export LOCALIP ?=$(shell ip addr show | awk '$$1 == "inet" && $$3 == "brd" { sub (/\/.*/,""); print $$2 }' | head -n1)
 
 export RELEASE_FILES ?="Resources/doc/index.md"
 export RELEASE_REMOTE ?=origin
+
+export CI_BUILD_REF_CUT=${CI_BUILD_REF:0:8}
+export CI_COMMIT_REF_NAME ?=develop
 
 ########################################################################################################################
 ####                                                    OVERLOAD                                                    ####
@@ -71,22 +72,46 @@ include ${current_dir}/Makefile-${SUFFIX_VS}
 ####                                                      STACK                                                     ####
 ########################################################################################################################
 
-# Publish new release. Usage:
 #   make tag RELEASE_VERSION=(major|minor|patch) RELEASE_FILES="Resources/doc/index.md"
-# You need to install https://github.com/flazz/semver/ before
+tag: ## Publish new release. Usage: (You need to install https://github.com/flazz/semver/ before)
 tag:
 	@semver inc $(RELEASE_VERSION)
 	@echo "New release: `semver tag`"
 	@echo Releasing sources
 	@(sed -i -r "s/(v[0-9]+\.[0-9]+\.[0-9]+)/`semver tag`/g" $(RELEASE_FILES)) || true
 
-# Tag git with last release
 #   make release
+release: ## Tag git with last release
 release:
-	@git add .
-	@git commit -m "releasing `semver tag`"
+	@(git add .) || true
+	@(git commit -m "#000 releasing `semver tag`") || true
 	@(git tag --delete `semver tag`) || true
-	@(git push --delete origin `semver tag`) || true
+	@(git push --no-verify --delete ${RELEASE_REMOTE} `semver tag`) || true
 	@git tag `semver tag`
-	@git push origin `semver tag`
-	@GIT_CB=$(git symbolic-ref --short HEAD) && git push -u ${RELEASE_REMOTE} $(GIT_CB)
+	@git push --no-verify ${RELEASE_REMOTE} `semver tag`
+	@GIT_CB=$(git symbolic-ref --short HEAD) && git push --no-verify -u ${RELEASE_REMOTE} $(GIT_CB)
+
+changelog: ## Create CHANGELOG file
+changelog:
+	@echo " ${PROJECT_NAME} project ($(RELEASE_VERSION)) unstable; urgency=low" >/tmp/changelog
+	@echo >> CHANGELOG.md
+	@git log $(CURRENT_TAG)...HEAD --pretty=format:'   * %s ' --reverse >> /tmp/changelog
+	@echo >> /tmp/changelog
+	@echo >> /tmp/changelog
+	@echo  "  -- Etienne de Longeaux <sfynx@pi-groupe.net>  $(shell date --rfc-2822)" >> /tmp/changelog
+	@echo >> /tmp/changelog
+	@# prepend to changelog
+	@cat /tmp/changelog|cat - CHANGELOG.md > /tmp/out && mv /tmp/out CHANGELOG.md
+	@echo >> CHANGELOG.md
+
+# make job-changelog GIT_OPTIONS="--github-site=https://git.alterway.fr -u alidade -p alidade-ui"
+# options: https://github.com/github-changelog-generator/github-changelog-generator/wiki/Advanced-change-log-generation-examples
+job-changelog: ## Generate changelog from github repository
+job-changelog:
+	@docker run -it --rm -v "$(pwd)":/usr/local/src/your-app ferrarimarco/github-changelog-generator $$GIT_OPTIONS
+
+# make job-changelog-2 GIT_OPTIONS="--user=pigroupe,--repository=SfynxCoreBundle,--milestone=2.8.3"
+# options: https://github.com/jwage/changelog-generator
+job-changelog-2: ## Generate changelog from github repository
+job-changelog-2:
+	@${docker-tools} run --rm php-cmd phing -f build.xml git:changelog -Dgit.options=$$GIT_OPTION >> CHANGELOG.md
