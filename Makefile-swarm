@@ -128,11 +128,17 @@ prepare-services: init-volumes
 ########################################################################################################################
 ####                                                    PIPELINE                                                    ####
 ########################################################################################################################
+verify-normal: init-volumes
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
+
+verify-recette: init-volumes
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:recette
+
 prepare-artifact-analyse: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse verify:normal
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse
 
 prepare-artifact-project: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project
 
 #----------------------------------------------------------------------------------------------------------------------#
 #                                                   ESB COMMAND                                                        #
