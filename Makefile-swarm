@@ -1,14 +1,16 @@
-export PROJECT_SUBNET_PREFIX ?=192.14
 export CONSUL_URL ?=localhost:8500
 
-export NETWORK_SUBNET ?=--subnet ${PROJECT_SUBNET_PREFIX}
+export NETWORK_DRIVER ?=overlay
+export NETWORK_SUBNET_PREFIX ?=
+export NETWORK_SUBNET ?=--subnet ${NETWORK_SUBNET_PREFIX}
 export NETWORK_NAME ?=${PROJECT_NAME}_expose
 
-export NETWORK_DRIVER ?=overlay
 export VOLUME_PREFIX_SERVICE ?=../../../../..
 export VOLUME_PREFIX_COMMAND ?=../../../..
 
 export OPTIONS_COMP ?=--no-dev
+
+export CMD_BUILD ?=
 
 ########################################################################################################################
 ####                                                 COMMAND ALIASES                                                ####
@@ -16,50 +18,50 @@ export OPTIONS_COMP ?=--no-dev
 compose-file         = --compose-file ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/${SERVICE_NAME}
 
 docker-compose 	     = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/${SERVICE_NAME}/docker-compose.yml -p ${PROJECT_NAME}
-docker-tools         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-command.yml -p ${PROJECT_NAME}
-docker-phpunit       = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-phpunit.yml -p ${PROJECT_NAME}
-docker-behat         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-behat.yml -p ${PROJECT_NAME}
-docker-html-minifier = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-html-minifier.yml -p ${PROJECT_NAME}
+docker-tools         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-command${CMD_BUILD}.yml -p ${PROJECT_NAME}
+docker-phpunit       = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-phpunit${CMD_BUILD}.yml -p ${PROJECT_NAME}
+docker-behat         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-behat${CMD_BUILD}.yml -p ${PROJECT_NAME}
+docker-html-minifier = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/command/docker-compose-html-minifier${CMD_BUILD}.yml -p ${PROJECT_NAME}
 
 ########################################################################################################################
 ####                                                      STACK                                                     ####
 ########################################################################################################################
 
-help:
-	@echo "Usage: make COMMAND"
-	@cat README.md |grep '| make' | column -t -s \|
-
 # --> INSTALL <--#
 # ---------------#
+install-dnsmasq: ## Install DNSmasq
 install-dnsmasq:
 	@apt-get install -y dnsmasq ${OUTPUT}
 	@sh -c "echo address=/dev/$${IP:-127.0.0.1} > /etc/dnsmasq.d/dev.conf"
 	@#echo "nameserver 127.0.0.1" >> /etc/resolv.conf # Cela permet d'affecter les noms de domaine du serveur de noms local.
 	@/etc/init.d/dnsmasq restart ${OUTPUT}
 
-install-git-hooks:
-	@git config credential.helper store && git config core.fileMode false && git config --global core.autocrlf false
-	@(./config/hooks/init/init.sh ${OUTPUT}) || true
+reinstall: ## Restart stack after full cleaning
+reinstall: uninstall install
 
-reinstall: install
-
+uninstall: ## Uninstall stack
 uninstall: stop rm
 
-install: check-composer pull-tools up prepare-services #prepare-esb
+install: ## Install stack
+install: check-composer pull-tools build-main up prepare-services #prepare-esb
 
 # --> INIT <--#
 # ------------#
-init: install-git-hooks init-network init-volumes
+init: ## Initialize git hook, network and volumes path
+init: init-git-hooks init-network init-volumes
 
+init-volumes: ## Initialize volumes path
 init-volumes:
 	@(mkdir -p ${VOLUMES_SHARED}) || true
 
 # --ingress : network is a special overlay network that facilitates load balancing among a service’s nodes
 # --opt encrypted=true : encrypt data exchanged between containers on different nodes on the overlay network
 # --attachable : authorize deploy and run command
+init-network: ## Initialize network
 init-network:
 	@./config/pipeline/bootstrap.sh --job=deploy:create_network \
 		--service="${SERVICE_NAME}" \
+		--project-name="${PROJECT_NAME}" \
 		--ci-build-ref-name="${CI_COMMIT_REF_NAME}" \
 		--job-network-name="${NETWORK_NAME}" \
 		--job-network-driver="${NETWORK_DRIVER}" \
@@ -68,29 +70,51 @@ init-network:
 		--job-network-attachable \
 		-v
 
+init-git-hooks: ## Initialize git hook
+init-git-hooks:
+	@git config credential.helper store && git config core.fileMode false && git config --global core.autocrlf false
+	@(./config/hooks/init/init.sh ${OUTPUT}) || true
+
 # --> DOCKER STRATEGY <--#
 # -----------------------#
-build:
-	@$(MAKE) -B -f config/makefile/Makefile-docker-images  $@
+build%: ## Build application (composer, gulp) in an image for CI pipeline
+build%:
+	@if [ ! -f "../docker/build/Makefile-docker-build" ]; then $(MAKE) -B -f config/docker/build/Makefile-docker-build $@; fi;
 
 pull-tools:
 	@${docker-compose} pull || true # && ${docker-tools} pull || true && ${docker-behat} pull || true
-	@#ENV_NAME=.env.orm && PHP_ENV=php.env.orm && ${docker-phpunit} pull || true
+	@#ENV_NAME=.env && PHP_ENV=php.env && ${docker-phpunit} pull || true
 
+stop: ## Stop containers stack
 stop:
 	@echo 'die'
 
+rm: ## Remove images, volumes and templates used to build stack
 rm:
 	@(docker stack rm ${SERVICE_NAME}) || true
-	@sleep 20 # tobe sure that th network service has been delete correctly if no services are in it
+	@( \
+	  echo -n "Waiting networks"; \
+	  until [ -z "$$(docker network ls --filter label=com.docker.stack.namespace=${PROJECT_NAME} -q)" ]; do \
+	    echo -n "."; \
+	    sleep 1; \
+	  done; \
+	  echo ""; \
+	)
 
+down: ## Stop and remove all containers
+down: rm
+	@docker rm -f $$(docker ps -af "label=com.docker.stack.namespace=${PROJECT_NAME}-${PROJECT_BUILD}" --format {{.Names}}) 2>- || true
+
+up: ## Start the stack deploy with composer install (use current version of images)
 up: init
 	@(make prepare-composer-install OPTIONS_COMP="${OPTIONS_COMP}") || true # cmd execute to launch composer with memory_limit=-1
 	@make -s deploy
 
+deploy: ## Start the stack (use current version of images)
 deploy:
 	@docker stack deploy ${compose-file}/docker-compose${DOCKER_COMPOSE_SUFFIX}.yml --resolve-image always ${PROJECT_NAME}
 
+deploy-update: ## Update the stack (use current version of images)
 deploy-update:
 	@for service in ${UPDATE_SERVICES}; do docker service update --force --detach=false --update-order start-first ${PROJECT_NAME}_$${service} ; done
 
@@ -104,11 +128,17 @@ prepare-services: init-volumes
 ########################################################################################################################
 ####                                                    PIPELINE                                                    ####
 ########################################################################################################################
+verify-normal: init-volumes
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
+
+verify-recette: init-volumes
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:recette
+
 prepare-artifact-analyse: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse verify:normal
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse
 
 prepare-artifact-project: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project
 
 #----------------------------------------------------------------------------------------------------------------------#
 #                                                   ESB COMMAND                                                        #
@@ -123,6 +153,14 @@ prepare-esb: init-volumes
 
 check-composer:
 	@if [ $(date -d 'now - 3 weeks' '+%s') -gt $(date -r www/composer.lock '+%s') ]; then echo 'WARNING! You did not update your composer dependencies since a long time ago. You should update.'; fi
+
+prepare-composer: ## Run composer install
+.PHONY: prepare-composer
+prepare-composer: www/vendor
+www/vendor: www/composer.lock
+	@${docker-tools} run --rm composer sh -c "composer install --ansi --no-interaction --no-scripts --prefer-dist --no-progress"
+www/composer.lock: www/composer.json
+	@${docker-tools} run --rm composer sh -c "composer update --ansi --no-interaction"
 
 # make prepare-composer-install OPTIONS_COMP='--no-scripts,-vvv'
 prepare-composer-install:
@@ -141,6 +179,25 @@ prepare-composer-autoload:
 	@${docker-tools} run --rm  php-cmd phing -f build.xml composer:dump -Dcomposer.dump.options=$$OPTIONS_COMP
 
 #----------------------------------------------------------------------------------------------------------------------#
+#                                                   GULP COMMAND                                                   #
+#----------------------------------------------------------------------------------------------------------------------#
+# make gulp-cmd CMD="npm install --save-dev gulp && npm install && gulp"
+gulp-cmd: ## Force the Generation of assets
+gulp-cmd:
+	@(sudo rm -rf www/web/integration) || true
+	@${docker-tools} run --rm integration ${CMD}
+	@sudo chown -Rf ${USER}: www/web
+
+gulp: ## Generate assets
+.PHONY: gulp
+gulp: www/web
+www/web: integration/node_modules
+	@$(docker-build) sh -c "cd integration ; gulp build"
+integration/node_modules: integration/package-lock.json
+integration/package-lock.json: integration/package.json
+	@$(docker-build) sh -c "cd integration ; npm install --save-dev"
+
+#----------------------------------------------------------------------------------------------------------------------#
 #                                                        JOB TEST                                                      #
 #----------------------------------------------------------------------------------------------------------------------#
 
@@ -153,32 +210,32 @@ prepare-composer-autoload:
 phpunit-functional:
 	@if [ "${RESET}" = "true" ]; then make -B init && ${docker-phpunit} pull; fi;
 	@${docker-phpunit} up -d --build --force-recreate
-	@make phpunit-functional-single-strategy DB_STRATEGY=orm ENV_NAME=.env.test.orm PHP_ENV=php.env.orm
+	@make phpunit-functional-single-strategy DB_STRATEGY=orm ENV_NAME=.env.test PHP_ENV=php.env
 	@${docker-phpunit} stop &&  ${docker-phpunit} rm -f
 
 phpunit-functional-single-strategy: init-volumes
 	@if [ "${RECREATE}" = "true" ]; then ${docker-phpunit} up -d --build --force-recreate; fi;
 	@${docker-tools} run --rm phpunit phing -f build.xml create:database-$$DB_STRATEGY prepare:folders prepare:configuration functional:unit -Dphpunit.group=functional-$$DB_STRATEGY -Ddir.build.service.name=${SERVICE_NAME}
 
-# make phpunit-unit group=unit ENV_NAME=.env.test.orm PHP_ENV=php.env.orm
+# make phpunit-unit group=unit ENV_NAME=.env.test PHP_ENV=php.env
 phpunit-unit: init-volumes
 	@if [ -z "${group}" ]; then ${docker-tools} run --rm phpunit phing -f build.xml prepare:folders prepare:configuration functional:unit;\
 	    else ${docker-tools} run --rm phpunit phing -f build.xml prepare:folders prepare:configuration functional:unit -Dphpunit.group=${group}; fi;
 
-# make phpunit-unit-cmd CMD="/usr/local/bin/phpunit -c app" ENV_NAME=.env.test.orm PHP_ENV=php.env.orm
+# make phpunit-unit-cmd CMD="/usr/local/bin/phpunit -c app" ENV_NAME=.env.test PHP_ENV=php.env
 phpunit-unit-cmd:
 	@${docker-tools} run --rm phpunit $$CMD
 
 # --> JOB TEST ACCEPTATION <--#
 # ----------------------------#
 # make -B build-infra tools="selenium"
-# make job-test-acceptation ENV_NAME=.env.behat.orm PHP_ENV=php.env.orm BEHAT_FILE=behat-project.yml BEHAT_OPTIONS=--suite=auth,--profile=chrome OUTPUT=1
+# make job-test-acceptation ENV_NAME=.env.behat PHP_ENV=php.env BEHAT_FILE=behat-project.yml BEHAT_OPTIONS=--suite=auth,--profile=chrome OUTPUT=1
 job-test-acceptation: prepare-artifact-analyse
 	@if [ -z "$$BEHAT_OPTIONS" ]; then BEHAT_OPTIONS="--profile=chrome"; fi; \
 		if [ -z "$$BEHAT_FILE" ]; then BEHAT_FILE=""; fi; \
 		${docker-behat} run --rm behat phing -f build.xml system:behat-options -Dbehat.options=$$BEHAT_OPTIONS -Dbehat.file=$$BEHAT_FILE -Doutput.file=$$OUTPUT
 
-# make job-test-acceptation-cmd CMD="behat -vvv -dfield --suite=auth --profile=chrome --config app/config/behat/behat-project.yml" ENV_NAME=.env.behat.orm PHP_ENV=php.env.orm
+# make job-test-acceptation-cmd CMD="behat -vvv -dfield --suite=auth --profile=chrome --config app/config/behat/behat-project.yml" ENV_NAME=.env.behat PHP_ENV=php.env
 job-test-acceptation-cmd:
 	@${docker-behat} run --rm behat $$CMD
 
@@ -189,24 +246,27 @@ job-test-acceptation-cmd:
 # make job-analyse-static ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project CPD_TOKENS=70 CPD_LINES=5 tools="cpd"
 # make job-analyse-static ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project CS_RULESET=/var/www/app/config/qa/php-cs-ruleset.xml CS_ERRORS=0 CS_WARNING=20 OUTPUT=1 tools="cpd dcd md-specific cs cs-psr2 loc pdepend phpmetrics phpmetrics2 sa 7cc"
 job-analyse-static: init-volumes
-	@ANALYSE_PATH=$$ANALYSE_PATH && for tool in ${tools}; do ${docker-tools} run --rm qualimetry phing -f build.xml prepare:artifact-analyse static:$$tool -Dphpcs.ruleset.xml="${CS_RULESET}" -Dphpcs.width="${CS_WIDTH}" -Dphpcs.errors="${CS_ERRORS}" -Dphpcs.warnings="${CS_WARNING}" -Dphpcpd.min.tokens="${CPD_TOKENS}" -Dphpcpd.min.lines="${CPD_LINES}" -Doutput.file="${OUTPUT}" -Dlist.commit.files="${LIST_COMMIT_FILES}"; done
+	@for tool in ${tools}; do ${docker-tools} run --rm qualimetry phing -f build.xml prepare:artifact-analyse static:$$tool -Dphpcs.ruleset.xml="${CS_RULESET}" -Dphpcs.width="${CS_WIDTH}" -Dphpcs.errors="${CS_ERRORS}" -Dphpcs.warnings="${CS_WARNING}" -Dphpcpd.min.tokens="${CPD_TOKENS}" -Dphpcpd.min.lines="${CPD_LINES}" -Doutput.file="${OUTPUT}" -Dlist.commit.files="${LIST_COMMIT_FILES}"; done
 
 # Job list: rats|psecio-parse|graudit|checker|iniscan|versionscan
-# make job-analyse-security tools="rats psecio-parse graudit checker iniscan versionscan"
+# make job-analyse-security ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project tools="rats psecio-parse graudit checker iniscan versionscan"
 job-analyse-security: init-volumes
-	@ANALYSE_PATH=$$ANALYSE_PATH && for tool in ${tools} ; do ${docker-tools} run --rm  qualimetry-security phing -f build.xml prepare:artifact-analyse static:security-$$tool ; done
+	@for tool in ${tools} ; do ${docker-tools} run --rm  qualimetry-security phing -f build.xml prepare:artifact-analyse static:security-$$tool ; done
 
 # Job list: schemaspy-mysql|schemaspy-pgsql
-# make job-analyse-db DB_SCHEMA=public JDK_DRIVER=/openjdk/driver/mysql-jdbc4.jar OUTPUT=1 tools="schemaspy-mysql"
-# make job-analyse-db DB_SCHEMA=public JDK_DRIVER=/openjdk/driver/postgresql-jdbc4.jar OUTPUT=1 tools="schemaspy-pgsql"
+# make job-analyse-db ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project DB_SCHEMA=public JDK_DRIVER=/openjdk/driver/mysql-jdbc4.jar OUTPUT=1 tools="schemaspy-mysql"
+# make job-analyse-db ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project DB_SCHEMA=public JDK_DRIVER=/openjdk/driver/postgresql-jdbc4.jar OUTPUT=1 tools="schemaspy-pgsql"
 job-analyse-db: init-volumes
-	@ANALYSE_PATH=$$ANALYSE_PATH && ENV_NAME=.env.orm && PHP_ENV=php.env.orm &&  \
+	@ENV_NAME=.env && PHP_ENV=php.env &&  \
 	for tool in ${tools}; do ${docker-tools} run --rm qualimetry phing -f build.xml prepare:artifact-analyse static:$$tool -Dproject.dbSchema=$$DB_SCHEMA -Dopenjdk.driver.path=$$JDK_DRIVER -Doutput.file=$$OUTPUT; done
 
 # Job list: snapshot-v1|snapshot-v2
-# make dashboard tools="snapshot-v1 snapshot-v2" ANALYSE_PROJET_ENV=project
+# make dashboard ANALYSE_PROJET_ENV=project  tools="snapshot-v1 snapshot-v2"
 dashboard: init-volumes
-	@ANALYSE_PATH=$$ANALYSE_PATH && for tool in ${tools}; do ${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse dashboard:$$tool; done
+	@for tool in ${tools}; do ${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse dashboard:$$tool; done
+
+minify: init-volumes
+	@${docker-html-minifier} run --rm html-minifier sh -c "mv /tmp/www-build/${SERVICE_NAME}/current/logs/dashboard.html /tmp/www-build/${SERVICE_NAME}/current/logs/dashboard.uncompressed.html && html-minifier --collapse-boolean-attributes --collapse-whitespace --html5 --minify-css --minify-js --remove-attribute-quotes --remove-comments --remove-empty-attributes --remove-redundant-attributes --remove-script-type-attributes --remove-style-link-type-attributes --use-short-doctype -o /tmp/www-build/${SERVICE_NAME}/current/logs/dashboard.html /tmp/www-build/${SERVICE_NAME}/current/logs/dashboard.uncompressed.html && rm /tmp/www-build/${SERVICE_NAME}/current/logs/dashboard.uncompressed.html"
 
 ########################################################################################################################
 ####                                           CONCATENATION OF COMMANDS                                            ####
@@ -219,12 +279,6 @@ phpunit:
 
 tools:
 	@${docker-tools} ${CMD}
-
-# make gulp-cmd CMD="npm install --save-dev gulp && npm install && gulp"
-gulp-cmd:
-	@(sudo rm -rf www/web/integration) || true
-	@${docker-tools} run --rm integration ${CMD}
-	@sudo chown -Rf ${USER}: www/web
 
 top:
 	#@watch -n 0,01 "docker top $${name}"
