@@ -83,7 +83,7 @@ build%:
 
 pull-tools:
 	@${docker-compose} pull || true # && ${docker-tools} pull || true && ${docker-behat} pull || true
-	@#ENV_NAME=.env.orm && PHP_ENV=php.env.orm && ${docker-phpunit} pull || true
+	@#ENV_NAME=.env && PHP_ENV=php.env && ${docker-phpunit} pull || true
 
 stop: ## Stop containers stack
 stop:
@@ -128,11 +128,17 @@ prepare-services: init-volumes
 ########################################################################################################################
 ####                                                    PIPELINE                                                    ####
 ########################################################################################################################
+verify-normal: init-volumes
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
+
+verify-recette: init-volumes
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:recette
+
 prepare-artifact-analyse: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse verify:normal
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse
 
 prepare-artifact-project: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
+	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project
 
 #----------------------------------------------------------------------------------------------------------------------#
 #                                                   ESB COMMAND                                                        #
@@ -204,32 +210,32 @@ integration/package-lock.json: integration/package.json
 phpunit-functional:
 	@if [ "${RESET}" = "true" ]; then make -B init && ${docker-phpunit} pull; fi;
 	@${docker-phpunit} up -d --build --force-recreate
-	@make phpunit-functional-single-strategy DB_STRATEGY=orm ENV_NAME=.env.test.orm PHP_ENV=php.env.orm
+	@make phpunit-functional-single-strategy DB_STRATEGY=orm ENV_NAME=.env.test PHP_ENV=php.env
 	@${docker-phpunit} stop &&  ${docker-phpunit} rm -f
 
 phpunit-functional-single-strategy: init-volumes
 	@if [ "${RECREATE}" = "true" ]; then ${docker-phpunit} up -d --build --force-recreate; fi;
 	@${docker-tools} run --rm phpunit phing -f build.xml create:database-$$DB_STRATEGY prepare:folders prepare:configuration functional:unit -Dphpunit.group=functional-$$DB_STRATEGY -Ddir.build.service.name=${SERVICE_NAME}
 
-# make phpunit-unit group=unit ENV_NAME=.env.test.orm PHP_ENV=php.env.orm
+# make phpunit-unit group=unit ENV_NAME=.env.test PHP_ENV=php.env
 phpunit-unit: init-volumes
 	@if [ -z "${group}" ]; then ${docker-tools} run --rm phpunit phing -f build.xml prepare:folders prepare:configuration functional:unit;\
 	    else ${docker-tools} run --rm phpunit phing -f build.xml prepare:folders prepare:configuration functional:unit -Dphpunit.group=${group}; fi;
 
-# make phpunit-unit-cmd CMD="/usr/local/bin/phpunit -c app" ENV_NAME=.env.test.orm PHP_ENV=php.env.orm
+# make phpunit-unit-cmd CMD="/usr/local/bin/phpunit -c app" ENV_NAME=.env.test PHP_ENV=php.env
 phpunit-unit-cmd:
 	@${docker-tools} run --rm phpunit $$CMD
 
 # --> JOB TEST ACCEPTATION <--#
 # ----------------------------#
 # make -B build-infra tools="selenium"
-# make job-test-acceptation ENV_NAME=.env.behat.orm PHP_ENV=php.env.orm BEHAT_FILE=behat-project.yml BEHAT_OPTIONS=--suite=auth,--profile=chrome OUTPUT=1
+# make job-test-acceptation ENV_NAME=.env.behat PHP_ENV=php.env BEHAT_FILE=behat-project.yml BEHAT_OPTIONS=--suite=auth,--profile=chrome OUTPUT=1
 job-test-acceptation: prepare-artifact-analyse
 	@if [ -z "$$BEHAT_OPTIONS" ]; then BEHAT_OPTIONS="--profile=chrome"; fi; \
 		if [ -z "$$BEHAT_FILE" ]; then BEHAT_FILE=""; fi; \
 		${docker-behat} run --rm behat phing -f build.xml system:behat-options -Dbehat.options=$$BEHAT_OPTIONS -Dbehat.file=$$BEHAT_FILE -Doutput.file=$$OUTPUT
 
-# make job-test-acceptation-cmd CMD="behat -vvv -dfield --suite=auth --profile=chrome --config app/config/behat/behat-project.yml" ENV_NAME=.env.behat.orm PHP_ENV=php.env.orm
+# make job-test-acceptation-cmd CMD="behat -vvv -dfield --suite=auth --profile=chrome --config app/config/behat/behat-project.yml" ENV_NAME=.env.behat PHP_ENV=php.env
 job-test-acceptation-cmd:
 	@${docker-behat} run --rm behat $$CMD
 
@@ -251,7 +257,7 @@ job-analyse-security: init-volumes
 # make job-analyse-db ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project DB_SCHEMA=public JDK_DRIVER=/openjdk/driver/mysql-jdbc4.jar OUTPUT=1 tools="schemaspy-mysql"
 # make job-analyse-db ANALYSE_PATH=src/ProjectContext ANALYSE_PROJET_ENV=project DB_SCHEMA=public JDK_DRIVER=/openjdk/driver/postgresql-jdbc4.jar OUTPUT=1 tools="schemaspy-pgsql"
 job-analyse-db: init-volumes
-	@ENV_NAME=.env.orm && PHP_ENV=php.env.orm &&  \
+	@ENV_NAME=.env && PHP_ENV=php.env &&  \
 	for tool in ${tools}; do ${docker-tools} run --rm qualimetry phing -f build.xml prepare:artifact-analyse static:$$tool -Dproject.dbSchema=$$DB_SCHEMA -Dopenjdk.driver.path=$$JDK_DRIVER -Doutput.file=$$OUTPUT; done
 
 # Job list: snapshot-v1|snapshot-v2

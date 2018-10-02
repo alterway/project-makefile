@@ -84,7 +84,7 @@ tag:
 release: ## Tag git with last release
 release:
 	@(git add .) || true
-	@(git commit -m "#000 releasing `semver tag`") || true
+	@(git commit --no-verify -m "#000 releasing `semver tag`") || true
 	@(git tag --delete `semver tag`) || true
 	@(git push --no-verify --delete ${RELEASE_REMOTE} `semver tag`) || true
 	@git tag `semver tag`
