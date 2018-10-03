@@ -128,11 +128,10 @@ prepare-services: init-volumes
 ########################################################################################################################
 ####                                                    PIPELINE                                                    ####
 ########################################################################################################################
-verify-normal: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:normal
-
-verify-recette: init-volumes
-	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-project verify:recette
+# Job list: normal|recette|smoke|smoke-list|sanity
+# make verify tools="normal"
+verify: init-volumes prepare-artifact-project
+	@for tool in ${tools}; do ${docker-tools} run --rm php-cmd phing -f build.xml verify:$$tool -Doutput.file="${OUTPUT}" -Dlist.commit.files="${LIST_COMMIT_FILES}"; done
 
 prepare-artifact-analyse: init-volumes
 	@${docker-tools} run --rm php-cmd phing -f build.xml prepare:artifact-analyse
