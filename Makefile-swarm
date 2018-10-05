@@ -51,7 +51,7 @@ init: ## Initialize git hook, network and volumes path
 init: init-git-hooks init-network init-volumes
 
 init-volumes: ## Initialize volumes path
-init-volumes:
+init-volumes: build-pull
 	@(mkdir -p ${VOLUMES_SHARED}) || true
 
 # --ingress : network is a special overlay network that facilitates load balancing among a service’s nodes
