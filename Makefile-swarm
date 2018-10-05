@@ -130,7 +130,8 @@ prepare-services: init-volumes
 ########################################################################################################################
 # Job list: normal|recette|smoke|smoke-list|sanity
 # make verify tools="normal"
-verify: init-volumes prepare-artifact-project
+verify: init-volumes
+	@(make -B prepare-artifact-project) || true
 	@for tool in ${tools}; do ${docker-tools} run --rm php-cmd phing -f build.xml verify:$$tool -Doutput.file="${OUTPUT}" -Dlist.commit.files="${LIST_COMMIT_FILES}"; done
 
 prepare-artifact-analyse: init-volumes
