@@ -91,7 +91,7 @@ stop:
 
 rm: ## Remove images, volumes and templates used to build stack
 rm:
-	@(docker stack rm ${SERVICE_NAME}) || true
+	@(docker stack rm ${PROJECT_NAME}) || true
 	@( \
 	  echo -n "Waiting networks"; \
 	  until [ -z "$$(docker network ls --filter label=com.docker.stack.namespace=${PROJECT_NAME} -q)" ]; do \
@@ -122,7 +122,7 @@ deploy-update:
 prepare-services: init-volumes
 	@#(docker service rm ${PROJECT_NAME}_persistence_php) || true
 	@#docker stack deploy ${compose-file}/docker-compose-persistence.yml --resolve-image always ${PROJECT_NAME}_persistence
-	@#if [ ${MOD_VERBOSE} = 1 ]; then docker service logs --details --follow --timestamps ${PROJECT_NAME}_persistence_php; fi;
+	@#docker service logs --details --timestamps --follow ${PROJECT_NAME}_persistence_php
 	@for service in ${PHP_INIT_SERVICES}; do ${docker-compose} run --rm $${service} init ; done
 
 ########################################################################################################################
