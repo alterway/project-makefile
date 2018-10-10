@@ -51,7 +51,7 @@ init: ## Initialize git hook, network and volumes path
 init: init-git-hooks init-network init-volumes
 
 init-volumes: ## Initialize volumes path
-init-volumes:
+init-volumes: build-pull
 	@(mkdir -p ${VOLUMES_SHARED}) || true
 
 # --ingress : network is a special overlay network that facilitates load balancing among a service’s nodes
@@ -91,7 +91,7 @@ stop:
 
 rm: ## Remove images, volumes and templates used to build stack
 rm:
-	@(docker stack rm ${SERVICE_NAME}) || true
+	@(docker stack rm ${PROJECT_NAME}) || true
 	@( \
 	  echo -n "Waiting networks"; \
 	  until [ -z "$$(docker network ls --filter label=com.docker.stack.namespace=${PROJECT_NAME} -q)" ]; do \
@@ -122,7 +122,7 @@ deploy-update:
 prepare-services: init-volumes
 	@#(docker service rm ${PROJECT_NAME}_persistence_php) || true
 	@#docker stack deploy ${compose-file}/docker-compose-persistence.yml --resolve-image always ${PROJECT_NAME}_persistence
-	@#if [ ${MOD_VERBOSE} = 1 ]; then docker service logs --details --follow --timestamps ${PROJECT_NAME}_persistence_php; fi;
+	@#docker service logs --details --timestamps --follow ${PROJECT_NAME}_persistence_php
 	@for service in ${PHP_INIT_SERVICES}; do ${docker-compose} run --rm $${service} init ; done
 
 ########################################################################################################################
@@ -130,7 +130,8 @@ prepare-services: init-volumes
 ########################################################################################################################
 # Job list: normal|recette|smoke|smoke-list|sanity
 # make verify tools="normal"
-verify: init-volumes prepare-artifact-project
+verify: init-volumes
+	@(make -B prepare-artifact-project) || true
 	@for tool in ${tools}; do ${docker-tools} run --rm php-cmd phing -f build.xml verify:$$tool -Doutput.file="${OUTPUT}" -Dlist.commit.files="${LIST_COMMIT_FILES}"; done
 
 prepare-artifact-analyse: init-volumes
