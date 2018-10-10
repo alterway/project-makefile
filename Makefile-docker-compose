@@ -14,11 +14,11 @@ export CMD_BUILD ?=
 ########################################################################################################################
 ####                                                 COMMAND ALIASES                                                ####
 ########################################################################################################################
-docker-compose 	     = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/${SERVICE_NAME}/docker-compose.yml -p ${PROJECT_NAME}
-docker-tools         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-command${CMD_BUILD}.yml -p ${PROJECT_NAME}
-docker-phpunit       = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-phpunit${CMD_BUILD}.yml -p ${PROJECT_NAME}
-docker-behat         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-behat${CMD_BUILD}.yml -p ${PROJECT_NAME}
-docker-html-minifier = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-html-minifier${CMD_BUILD}.yml -p ${PROJECT_NAME}
+export docker-compose       = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/${SERVICE_NAME}/docker-compose.yml -p ${PROJECT_NAME}
+export docker-tools         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-command${CMD_BUILD}.yml -p ${PROJECT_NAME}
+export docker-phpunit       = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-phpunit${CMD_BUILD}.yml -p ${PROJECT_NAME}
+export docker-behat         = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-behat${CMD_BUILD}.yml -p ${PROJECT_NAME}
+export docker-html-minifier = docker-compose -f ${PWD}/config/docker/${SUFFIX_VS}/${INFRA_ENV}/default/docker-compose-html-minifier${CMD_BUILD}.yml -p ${PROJECT_NAME}
 
 ########################################################################################################################
 ####                                                      STACK                                                     ####
@@ -48,7 +48,7 @@ init: ## Initialize git hook, network and volumes path
 init: init-git-hooks init-network init-volumes
 
 init-volumes: ## Initialize volumes path
-init-volumes:
+init-volumes: build-pull
 	@(mkdir -p ${VOLUMES_SHARED}) || true
 
 init-network: ## Initialize network
@@ -110,7 +110,8 @@ prepare-services: init-volumes
 ########################################################################################################################
 # Job list: normal|recette|smoke|smoke-list|sanity
 # make verify tools="normal"
-verify: init-volumes prepare-artifact-project
+verify: init-volumes
+	@(make -B prepare-artifact-project) || true
 	@SERVICE_NAME=default && \
 	    for tool in ${tools}; do ${docker-tools} run --rm php-cmd phing -f build.xml verify:$$tool -Doutput.file="${OUTPUT}" -Dlist.commit.files="${LIST_COMMIT_FILES}"; done
 
