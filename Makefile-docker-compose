@@ -72,7 +72,7 @@ init-git-hooks:
 # -----------------------#
 build%: ## Build application (composer, gulp) in an image for CI pipeline
 build%:
-	@if [ ! -f "../docker/build/Makefile-docker-build" ]; then $(MAKE) -B -f config/docker/build/Makefile-docker-build $@; fi;
+	@if [ -f "config/docker/build/Makefile-docker-build" ]; then $(MAKE) -B -f config/docker/build/Makefile-docker-build $@; fi;
 
 pull-tools:
 	@${docker-compose} pull || true # && ${docker-tools} pull || true && ${docker-behat} pull || true
